@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet — Vehicle Reservations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  :root{
+    --ink:#1f2a22; --ink-soft:#3a4735; --paper:#f5f2ea; --panel:#ffffff;
+    --border:#e2dcc9; --muted:#7c7566;
+    --accent:#d98f2b; --accent-dark:#b8751f; --accent-ink:#7a4a0a;
+    --available:#3f7d5c; --available-bg:#e4efe7;
+    --out:#b5493a; --out-bg:#f5e2de;
+    --reserved:#b9821f; --reserved-bg:#fbf0dc;
+    --radius:8px;
+    --shadow:0 1px 2px rgba(31,42,34,.06), 0 4px 16px rgba(31,42,34,.07);
+    --font-display:'Oswald',sans-serif; --font-body:'Inter',system-ui,-apple-system,sans-serif; --font-mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  *,*::before,*::after{ box-sizing:border-box; }
+  body{ margin:0; font-family:var(--font-body); color:var(--ink); background:var(--paper); }
+  h1,h2,h3{ font-family:var(--font-display); margin:0; }
+  button,input,select{ font-family:inherit; }
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce){ *{ transition:none !important; animation:none !important; } }
+
+  /* ---------- login ---------- */
+  .login-screen{ min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--ink); padding:20px; }
+  .login-card{ background:var(--panel); border-radius:12px; padding:32px 28px; width:100%; max-width:380px; box-shadow:0 20px 60px rgba(0,0,0,.35); }
+  .brand{ text-align:center; margin-bottom:22px; }
+  .brand-plate{ display:inline-block; border:3px solid var(--ink); border-radius:6px; padding:8px 20px; font-family:var(--font-mono); font-weight:700; font-size:26px; letter-spacing:.14em; color:var(--ink); background:var(--paper); }
+  .brand-sub{ margin:10px 0 0; color:var(--muted); font-size:13.5px; }
+  .login-screen label{ display:block; font-size:13px; font-weight:600; color:var(--ink-soft); margin-bottom:14px; }
+  .login-screen input{ display:block; width:100%; margin-top:5px; padding:10px 12px; border:1px solid var(--border); border-radius:6px; font-size:14.5px; }
+  .login-error{ color:var(--out); font-size:13px; margin:-4px 0 14px; }
+  .login-hint{ text-align:center; color:var(--muted); font-size:12.5px; margin:18px 0 0; }
+
+  /* ---------- shell ---------- */
+  .topbar{ background:var(--ink); color:var(--paper); display:flex; align-items:center; gap:20px; padding:12px 20px; flex-wrap:wrap; }
+  .topbar-brand{ font-family:var(--font-mono); font-weight:700; letter-spacing:.14em; font-size:16px; border:2px solid var(--paper); border-radius:5px; padding:3px 10px; }
+  .topbar-nav{ display:flex; gap:4px; flex:1; flex-wrap:wrap; }
+  .navlink{ background:none; border:none; color:var(--paper); opacity:.72; padding:8px 14px; border-radius:6px; font-family:var(--font-display); text-transform:uppercase; letter-spacing:.04em; font-size:13px; cursor:pointer; }
+  .navlink:hover{ opacity:.9; }
+  .navlink.active{ opacity:1; background:rgba(255,255,255,.14); }
+  .topbar-user{ display:flex; align-items:center; gap:10px; font-size:13.5px; }
+
+  .content{ max-width:1080px; margin:0 auto; padding:26px 20px 70px; }
+  .view-header{ display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:18px; gap:12px; flex-wrap:wrap; }
+  .view-title{ font-size:24px; }
+  .view-sub{ margin:4px 0 0; color:var(--muted); font-size:13.5px; }
+
+  /* ---------- buttons ---------- */
+  .btn{ font-weight:600; font-size:13.5px; padding:8px 14px; border-radius:6px; border:1px solid transparent; cursor:pointer; }
+  .btn-primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn-primary:hover{ background:var(--accent-dark); border-color:var(--accent-dark); }
+  .btn-secondary{ background:transparent; border:1px solid var(--ink); color:var(--ink); }
+  .btn-secondary:hover{ background:rgba(31,42,34,.06); }
+  .btn-ghost{ background:transparent; border:1px solid var(--border); color:var(--ink-soft); }
+  .btn-ghost:hover{ background:rgba(31,42,34,.05); }
+  .btn-danger{ background:var(--out); border-color:var(--out); color:#fff; }
+  .btn-sm{ padding:5px 10px; font-size:12.5px; }
+  .btn-block{ width:100%; }
+  .btn[disabled]{ opacity:.55; cursor:not-allowed; }
+
+  /* ---------- vehicle grid / cards ---------- */
+  .vehicle-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:14px; }
+  .vehicle-card{ background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; display:flex; flex-direction:column; gap:9px; cursor:pointer; }
+  .vehicle-card:hover{ border-color:var(--accent); }
+  .card-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+  .plate{ display:inline-block; border:2px solid var(--ink); border-radius:5px; padding:3px 10px; font-family:var(--font-mono); font-weight:700; letter-spacing:.05em; font-size:13.5px; background:var(--paper); }
+  .plate-sm{ font-size:12px; padding:2px 8px; }
+  .card-model{ margin:0; font-size:12.5px; color:var(--muted); }
+  .card-meta{ margin:0; font-size:13px; color:var(--ink-soft); font-family:var(--font-mono); }
+  .card-actions{ display:flex; gap:8px; margin-top:auto; padding-top:4px; flex-wrap:wrap; }
+
+  .status-pill{ display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; white-space:nowrap; }
+  .status-dot{ width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .status-available{ background:var(--available-bg); color:var(--available); }
+  .status-out{ background:var(--out-bg); color:var(--out); }
+  .status-reserved{ background:var(--reserved-bg); color:var(--reserved); }
+
+  .empty-state,.empty-hint{ color:var(--muted); font-size:13.5px; padding:18px; text-align:center; }
+  .empty-state{ border:1px dashed var(--border); border-radius:var(--radius); grid-column:1/-1; }
+
+  /* ---------- modal ---------- */
+  .modal-overlay{ position:fixed; inset:0; background:rgba(31,42,34,.5); display:flex; align-items:center; justify-content:center; padding:20px; z-index:80; }
+  .modal-card{ background:var(--panel); border-radius:12px; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; padding:24px; box-shadow:0 24px 60px rgba(0,0,0,.3); }
+  .modal-title{ font-size:20px; }
+  .modal-sub{ margin:5px 0 0; color:var(--muted); font-size:13px; }
+  .section-label{ font-family:var(--font-display); text-transform:uppercase; letter-spacing:.04em; font-size:12.5px; color:var(--muted); margin:18px 0 8px; }
+  .modal-card form label{ display:block; font-size:13px; font-weight:600; color:var(--ink-soft); margin-bottom:14px; }
+  .modal-card input,.modal-card select{ display:block; width:100%; margin-top:5px; padding:9px 11px; border:1px solid var(--border); border-radius:6px; font-size:14px; }
+  .form-error{ color:var(--out); font-size:13px; margin:-6px 0 14px; }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:16px; flex-wrap:wrap; }
+
+  .schedule-list{ display:flex; flex-direction:column; gap:6px; }
+  .schedule-row{ display:flex; align-items:center; gap:10px; font-size:13px; padding:8px 10px; background:var(--paper); border-radius:6px; }
+  .schedule-row span:nth-child(2){ font-family:var(--font-mono); flex:1; }
+  .schedule-who{ color:var(--muted); }
+  .schedule-tag{ font-size:11px; font-weight:700; padding:2px 7px; border-radius:5px; white-space:nowrap; }
+  .tag-out-now{ background:var(--out-bg); color:var(--out); }
+  .tag-upcoming{ background:var(--reserved-bg); color:var(--reserved); }
+  .tag-overdue{ background:var(--out); color:#fff; }
+
+  /* ---------- tables ---------- */
+  .data-table{ width:100%; border-collapse:collapse; font-size:13.5px; background:var(--panel); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); }
+  .data-table th{ text-align:left; padding:10px 12px; background:var(--ink); color:var(--paper); font-family:var(--font-display); text-transform:uppercase; letter-spacing:.03em; font-size:11.5px; font-weight:600; }
+  .data-table td{ padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  .data-table tr:last-child td{ border-bottom:none; }
+  .actions-cell{ display:flex; gap:6px; flex-wrap:wrap; }
+
+  /* ---------- admin ---------- */
+  .tabs{ display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--border); }
+  .tab{ background:none; border:none; padding:9px 14px; font-family:var(--font-display); text-transform:uppercase; letter-spacing:.03em; font-size:12.5px; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; }
+  .tab.active{ color:var(--ink); border-bottom-color:var(--accent); }
+  .admin-toolbar{ margin-bottom:12px; }
+  .admin-note{ color:var(--muted); font-size:12.5px; margin:0 0 12px; }
+  .role-select{ padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:13px; }
+
+  /* ---------- toast ---------- */
+  .toast-root{ position:fixed; bottom:18px; right:18px; display:flex; flex-direction:column; gap:8px; z-index:120; }
+  .toast{ background:var(--ink); color:var(--paper); padding:10px 16px; border-radius:8px; font-size:13.5px; box-shadow:var(--shadow); border-left:4px solid var(--available); }
+  .toast.toast-error{ border-left-color:var(--out); }
+
+  @media (max-width:640px){
+    .content{ padding:18px 14px 60px; }
+    .modal-card{ padding:20px; }
+    .data-table{ font-size:12.5px; }
+  }
+</style>
+</head>
+<body>
+
+  <div id="loginScreen" class="login-screen">
+    <div class="login-card">
+      <div class="brand">
+        <div class="brand-plate">FLEET</div>
+        <p class="brand-sub">Vehicle reservations</p>
+      </div>
+      <form id="loginForm">
+        <label>Email
+          <input type="email" id="loginEmail" required autocomplete="username">
+        </label>
+        <label>Password
+          <input type="password" id="loginPassword" required autocomplete="current-password">
+        </label>
+        <p class="login-error" id="loginError" hidden></p>
+        <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+      </form>
+      <p class="login-hint">Accounts are created by IT. Contact your admin for access.</p>
+    </div>
+  </div>
+
+  <div id="appShell" hidden>
+    <header class="topbar">
+      <div class="topbar-brand">FLEET</div>
+      <nav class="topbar-nav">
+        <button class="navlink" data-view="dashboard">Dashboard</button>
+        <button class="navlink" data-view="mybookings">My Bookings</button>
+        <button class="navlink" data-view="admin" id="adminNavLink" hidden>Admin</button>
+      </nav>
+      <div class="topbar-user">
+        <span id="userName"></span>
+        <button class="btn btn-ghost btn-sm" id="signOutBtn">Sign out</button>
+      </div>
+    </header>
+    <main class="content">
+      <section id="view-dashboard" class="view"></section>
+      <section id="view-mybookings" class="view" hidden></section>
+      <section id="view-admin" class="view" hidden></section>
+    </main>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div id="toastRoot" class="toast-root"></div>
+
+<script>
+// ================= CONFIG — fill these in from Supabase: Settings > API =================
+const SUPABASE_URL = "https://ghkrtfyzffyopsgndcla.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdoa3J0Znl6ZmZ5b3BzZ25kY2xhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NzE1MDgsImV4cCI6MjEwMDE0NzUwOH0.86RAMH2bYqjZxUeBEs9DcphPtGxIazTrM8R4OsTkEgc";
+// ===========================================================================================
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const state = {
+  session: null,
+  profile: null,
+  vehicles: [],            // active vehicles, for the dashboard
+  activeReservations: [],  // all status='active' reservations, joined
+  allVehicles: [],         // admin: includes retired
+  allProfiles: [],
+  allReservations: [],
+  view: 'dashboard',
+  adminTab: 'vehicles',
+};
+
+const $ = (sel, root=document) => root.querySelector(sel);
+const $all = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+function escapeHtml(str){
+  return String(str ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
+const dtFormatter = new Intl.DateTimeFormat(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+function fmtDateTime(iso){ return dtFormatter.format(new Date(iso)); }
+
+function toInputValue(date){
+  const pad = n => String(n).padStart(2,'0');
+  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+function fromInputValue(str){ return new Date(str).toISOString(); }
+function roundToNext5(date){ const ms=5*60*1000; return new Date(Math.ceil(date.getTime()/ms)*ms); }
+
+function showToast(message, type='success'){
+  const t = document.createElement('div');
+  t.className = 'toast' + (type==='error' ? ' toast-error' : '');
+  t.textContent = message;
+  $('#toastRoot').appendChild(t);
+  setTimeout(()=> t.remove(), 4000);
+}
+
+function emptyStateHtml(msg){ return `<div class="empty-state">${escapeHtml(msg)}</div>`; }
+function closeModal(){ $('#modalRoot').innerHTML = ''; }
+
+// ---------------- auth ----------------
+async function init(){
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) { await onSignedIn(session); } else { showLogin(); }
+  sb.auth.onAuthStateChange((event, sess) => {
+    if (event === 'SIGNED_IN' && sess) onSignedIn(sess);
+    if (event === 'SIGNED_OUT') showLogin();
+  });
+}
+
+async function onSignedIn(session){
+  state.session = session;
+  const { data: profile, error } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
+  if (error || !profile) {
+    showToast('No profile found for this account. Contact your admin.', 'error');
+    await sb.auth.signOut();
+    return;
+  }
+  state.profile = profile;
+  showApp();
+  await refreshAll();
+  subscribeRealtime();
+}
+
+function showApp(){
+  $('#loginScreen').hidden = true;
+  $('#appShell').hidden = false;
+  $('#userName').textContent = state.profile.full_name || state.profile.email;
+  $('#adminNavLink').hidden = state.profile.role !== 'admin';
+  setView('dashboard');
+}
+function showLogin(){
+  $('#appShell').hidden = true;
+  $('#loginScreen').hidden = false;
+  state.session = null; state.profile = null;
+}
+
+$('#loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = $('#loginError'); errEl.hidden = true;
+  const email = $('#loginEmail').value.trim();
+  const password = $('#loginPassword').value;
+  const btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Sign in';
+  if (error) { errEl.textContent = error.message; errEl.hidden = false; }
+});
+
+$('#signOutBtn').addEventListener('click', () => sb.auth.signOut());
+
+$all('.navlink').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.view)));
+
+function setView(view){
+  state.view = view;
+  $all('.navlink').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  $all('.view').forEach(v => v.hidden = v.id !== 'view-' + view);
+  if (view === 'dashboard') renderDashboard();
+  if (view === 'mybookings') renderMyBookings();
+  if (view === 'admin') renderAdmin();
+}
+
+// ---------------- realtime + data ----------------
+function subscribeRealtime(){
+  sb.channel('reservations-live')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, () => refreshAll())
+    .subscribe();
+}
+
+async function fetchVehicles(){
+  const { data, error } = await sb.from('vehicles').select('*').eq('active', true).order('name');
+  if (!error) state.vehicles = data;
+}
+
+async function fetchActiveReservations(){
+  const { data, error } = await sb.from('reservations')
+    .select('*, vehicle:vehicles(name), user:profiles(full_name,email)')
+    .eq('status', 'active')
+    .order('start_at');
+  if (!error) state.activeReservations = data;
+}
+
+async function refreshAll(){
+  await Promise.all([fetchVehicles(), fetchActiveReservations()]);
+  if (state.view === 'dashboard') renderDashboard();
+  if (state.view === 'mybookings') renderMyBookings();
+  if (state.view === 'admin' && state.profile.role === 'admin') renderAdmin();
+}
+
+function computeVehicleStatus(vehicleId){
+  const now = new Date();
+  const relevant = state.activeReservations.filter(r => r.vehicle_id === vehicleId);
+  const current = relevant.find(r => new Date(r.start_at) <= now && new Date(r.end_at) > now);
+  if (current) return { state:'out', reservation: current };
+  const overdue = relevant.find(r => new Date(r.start_at) <= now && new Date(r.end_at) <= now);
+  if (overdue) return { state:'overdue', reservation: overdue };
+  const upcoming = relevant.filter(r => new Date(r.start_at) > now)
+    .sort((a,b) => new Date(a.start_at) - new Date(b.start_at))[0];
+  if (upcoming) return { state:'reserved', reservation: upcoming };
+  return { state:'available', reservation: null };
+}
+
+// ---------------- dashboard ----------------
+function renderDashboard(){
+  const container = $('#view-dashboard');
+  const cards = state.vehicles.map(vehicleCardHtml).join('');
+  container.innerHTML = `
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">Fleet status</h1>
+        <p class="view-sub">${state.vehicles.length} vehicle${state.vehicles.length===1?'':'s'} · live</p>
+      </div>
+    </div>
+    <div class="vehicle-grid">${cards || emptyStateHtml('No vehicles yet. Ask your admin to add one.')}</div>
+  `;
+  $all('.vehicle-card', container).forEach(card => card.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    openVehicleModal(card.dataset.id);
+  }));
+  $all('[data-action=checkout]', container).forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); openReserveModal(b.dataset.id, 'checkout'); }));
+  $all('[data-action=reserve]', container).forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); openReserveModal(b.dataset.id, 'reserve'); }));
+  $all('[data-action=checkin]', container).forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); checkInReservation(b.dataset.rid); }));
+}
+
+function vehicleCardHtml(v){
+  const status = computeVehicleStatus(v.id);
+  let pill, meta, actions;
+
+  if (status.state === 'available') {
+    pill = `<span class="status-pill status-available"><span class="status-dot"></span>Available</span>`;
+    meta = `<p class="card-meta">Free now</p>`;
+    actions = `<button class="btn btn-primary btn-sm" data-action="checkout" data-id="${v.id}">Check out now</button>
+               <button class="btn btn-secondary btn-sm" data-action="reserve" data-id="${v.id}">Reserve later</button>`;
+  } else if (status.state === 'out' || status.state === 'overdue') {
+    const r = status.reservation;
+    const who = escapeHtml(r.user?.full_name || r.user?.email || 'Unknown');
+    const mine = r.user_id === state.profile.id;
+    pill = status.state === 'overdue'
+      ? `<span class="status-pill status-out"><span class="status-dot"></span>Overdue</span>`
+      : `<span class="status-pill status-out"><span class="status-dot"></span>Out</span>`;
+    meta = `<p class="card-meta">${who} · back by ${fmtDateTime(r.end_at)}</p>`;
+    actions = mine
+      ? `<button class="btn btn-primary btn-sm" data-action="checkin" data-rid="${r.id}">Check in</button>`
+      : `<button class="btn btn-secondary btn-sm" data-action="reserve" data-id="${v.id}">Reserve later</button>`;
+  } else {
+    const r = status.reservation;
+    pill = `<span class="status-pill status-available"><span class="status-dot"></span>Available</span>`;
+    meta = `<p class="card-meta">Reserved from ${fmtDateTime(r.start_at)}</p>`;
+    actions = `<button class="btn btn-primary btn-sm" data-action="checkout" data-id="${v.id}">Check out now</button>
+               <button class="btn btn-secondary btn-sm" data-action="reserve" data-id="${v.id}">Reserve later</button>`;
+  }
+
+  return `<article class="vehicle-card" data-id="${v.id}">
+    <div class="card-head">
+      <span class="plate">${escapeHtml(v.name)}</span>
+      ${pill}
+    </div>
+    ${v.make_model ? `<p class="card-model">${escapeHtml(v.make_model)}</p>` : ''}
+    ${meta}
+    <div class="card-actions">${actions}</div>
+  </article>`;
+}
+
+function openVehicleModal(vehicleId){
+  const v = state.vehicles.find(x => x.id === vehicleId) || state.allVehicles.find(x => x.id === vehicleId);
+  if (!v) return;
+  const now = new Date();
+  const upcoming = state.activeReservations.filter(r => r.vehicle_id === vehicleId)
+    .sort((a,b) => new Date(a.start_at) - new Date(b.start_at));
+  const rows = upcoming.map(r => {
+    const who = escapeHtml(r.user?.full_name || r.user?.email || 'Unknown');
+    const tag = new Date(r.end_at) <= now ? ['Overdue','tag-overdue'] : (new Date(r.start_at) <= now ? ['Out now','tag-out-now'] : ['Upcoming','tag-upcoming']);
+    return `<div class="schedule-row"><span class="schedule-tag ${tag[1]}">${tag[0]}</span><span>${fmtDateTime(r.start_at)} – ${fmtDateTime(r.end_at)}</span><span class="schedule-who">${who}</span></div>`;
+  }).join('') || `<p class="empty-hint">No upcoming bookings.</p>`;
+
+  $('#modalRoot').innerHTML = `
+    <div class="modal-overlay" id="vehicleModal">
+      <div class="modal-card">
+        <div class="card-head"><span class="plate">${escapeHtml(v.name)}</span></div>
+        ${v.make_model || v.license_plate ? `<p class="modal-sub">${escapeHtml(v.make_model||'')}${v.make_model && v.license_plate ? ' · ' : ''}${escapeHtml(v.license_plate||'')}</p>` : ''}
+        <h3 class="section-label">Schedule</h3>
+        <div class="schedule-list">${rows}</div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="vmClose">Close</button>
+          <button type="button" class="btn btn-secondary" id="vmReserve">Reserve for later</button>
+          <button type="button" class="btn btn-primary" id="vmCheckout">Check out now</button>
+        </div>
+      </div>
+    </div>`;
+  $('#vmClose').addEventListener('click', closeModal);
+  $('#vehicleModal').addEventListener('click', (e) => { if (e.target.id === 'vehicleModal') closeModal(); });
+  $('#vmReserve').addEventListener('click', () => openReserveModal(vehicleId, 'reserve'));
+  $('#vmCheckout').addEventListener('click', () => openReserveModal(vehicleId, 'checkout'));
+}
+
+function openReserveModal(vehicleId, mode){
+  const v = state.vehicles.find(x => x.id === vehicleId) || state.allVehicles.find(x => x.id === vehicleId);
+  if (!v) return;
+  const now = new Date();
+  let start, end;
+  if (mode === 'checkout') {
+    start = roundToNext5(now);
+    end = new Date(start.getTime() + 4*3600*1000);
+  } else {
+    const d = new Date(now); d.setDate(d.getDate()+1); d.setHours(9,0,0,0);
+    start = d; end = new Date(d.getTime() + 4*3600*1000);
+  }
+
+  $('#modalRoot').innerHTML = `
+    <div class="modal-overlay" id="reserveModal">
+      <div class="modal-card">
+        <h2 class="modal-title">${mode==='checkout' ? 'Check out' : 'Reserve'} ${escapeHtml(v.name)}</h2>
+        ${v.make_model ? `<p class="modal-sub">${escapeHtml(v.make_model)}</p>` : ''}
+        <form id="reserveForm" style="margin-top:16px;">
+          <label>Start
+            <input type="datetime-local" id="resStart" value="${toInputValue(start)}" required>
+          </label>
+          <label>Return by
+            <input type="datetime-local" id="resEnd" value="${toInputValue(end)}" required>
+          </label>
+          <p class="form-error" id="resError" hidden></p>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" id="resCancel">Cancel</button>
+            <button type="submit" class="btn btn-primary">${mode==='checkout' ? 'Check out' : 'Reserve'}</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  $('#resCancel').addEventListener('click', closeModal);
+  $('#reserveModal').addEventListener('click', (e) => { if (e.target.id === 'reserveModal') closeModal(); });
+  $('#reserveForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = $('#resError'); errEl.hidden = true;
+    const startAt = fromInputValue($('#resStart').value);
+    const endAt = fromInputValue($('#resEnd').value);
+
+    if (new Date(endAt) <= new Date(startAt)) {
+      errEl.textContent = 'Return time must be after the start time.'; errEl.hidden = false; return;
+    }
+    const conflict = state.activeReservations.find(r =>
+      r.vehicle_id === vehicleId &&
+      new Date(r.start_at) < new Date(endAt) &&
+      new Date(startAt) < new Date(r.end_at)
+    );
+    if (conflict) {
+      const who = escapeHtml(conflict.user?.full_name || conflict.user?.email || 'someone');
+      errEl.textContent = `Already booked ${fmtDateTime(conflict.start_at)}–${fmtDateTime(conflict.end_at)} by ${who}.`;
+      errEl.hidden = false; return;
+    }
+
+    const submitBtn = e.target.querySelector('button[type=submit]');
+    submitBtn.disabled = true;
+    const { error } = await sb.from('reservations').insert({ vehicle_id: vehicleId, user_id: state.profile.id, start_at: startAt, end_at: endAt });
+    submitBtn.disabled = false;
+    if (error) {
+      errEl.textContent = error.code === '23P01' ? 'That time was just booked by someone else — pick another time.' : error.message;
+      errEl.hidden = false; return;
+    }
+    closeModal();
+    showToast(mode === 'checkout' ? 'Checked out.' : 'Reserved.');
+    await refreshAll();
+  });
+}
+
+async function checkInReservation(id){
+  const { error } = await sb.from('reservations').update({ status:'completed', checked_in_at: new Date().toISOString() }).eq('id', id);
+  if (error) { showToast(error.message, 'error'); return; }
+  showToast('Checked in.');
+  await refreshAll();
+}
+
+async function cancelReservation(id){
+  if (!confirm('Cancel this booking?')) return;
+  const { error } = await sb.from('reservations').update({ status:'cancelled' }).eq('id', id);
+  if (error) { showToast(error.message, 'error'); return; }
+  showToast('Booking cancelled.');
+  await refreshAll();
+}
+
+// ---------------- my bookings ----------------
+function renderMyBookings(){
+  const container = $('#view-mybookings');
+  const now = new Date();
+  const mine = state.activeReservations.filter(r => r.user_id === state.profile.id)
+    .sort((a,b) => new Date(a.start_at) - new Date(b.start_at));
+
+  const rows = mine.map(r => {
+    const v = state.vehicles.find(x => x.id === r.vehicle_id) || { name: '(vehicle removed)' };
+    const started = new Date(r.start_at) <= now;
+    return `<tr>
+      <td><span class="plate plate-sm">${escapeHtml(v.name)}</span></td>
+      <td>${fmtDateTime(r.start_at)}</td>
+      <td>${fmtDateTime(r.end_at)}</td>
+      <td>${started ? '<span class="status-pill status-out">Out</span>' : '<span class="status-pill status-reserved">Upcoming</span>'}</td>
+      <td class="actions-cell">${started
+        ? `<button class="btn btn-primary btn-sm" data-action="checkin" data-rid="${r.id}">Check in</button>`
+        : `<button class="btn btn-ghost btn-sm" data-action="cancel" data-rid="${r.id}">Cancel</button>`}</td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="view-header"><div><h1 class="view-title">My bookings</h1><p class="view-sub">Upcoming and active reservations</p></div></div>
+    ${mine.length ? `<table class="data-table"><thead><tr><th>Vehicle</th><th>Start</th><th>Return by</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+                  : emptyStateHtml("You don't have any bookings. Reserve a vehicle from the dashboard.")}
+  `;
+  $all('[data-action=checkin]', container).forEach(b => b.addEventListener('click', () => checkInReservation(b.dataset.rid)));
+  $all('[data-action=cancel]', container).forEach(b => b.addEventListener('click', () => cancelReservation(b.dataset.rid)));
+}
+
+// ---------------- admin ----------------
+function renderAdmin(){
+  if (!state.profile || state.profile.role !== 'admin') { $('#view-admin').innerHTML = emptyStateHtml('Admins only.'); return; }
+  const container = $('#view-admin');
+  container.innerHTML = `
+    <div class="view-header"><div><h1 class="view-title">Admin</h1><p class="view-sub">Manage vehicles, users, and bookings</p></div></div>
+    <div class="tabs">
+      <button class="tab ${state.adminTab==='vehicles'?'active':''}" data-tab="vehicles">Vehicles</button>
+      <button class="tab ${state.adminTab==='users'?'active':''}" data-tab="users">Users</button>
+      <button class="tab ${state.adminTab==='reservations'?'active':''}" data-tab="reservations">Reservations</button>
+    </div>
+    <div id="adminTabBody"></div>
+  `;
+  $all('.tab', container).forEach(t => t.addEventListener('click', () => { state.adminTab = t.dataset.tab; renderAdmin(); }));
+  if (state.adminTab === 'vehicles') renderAdminVehicles();
+  if (state.adminTab === 'users') renderAdminUsers();
+  if (state.adminTab === 'reservations') renderAdminReservations();
+}
+
+async function fetchAllVehiclesAdmin(){
+  const { data, error } = await sb.from('vehicles').select('*').order('name');
+  if (!error) state.allVehicles = data;
+}
+
+async function renderAdminVehicles(){
+  await fetchAllVehiclesAdmin();
+  const body = $('#adminTabBody');
+  const rows = state.allVehicles.map(v => `
+    <tr>
+      <td><span class="plate plate-sm">${escapeHtml(v.name)}</span></td>
+      <td>${escapeHtml(v.make_model || '—')}</td>
+      <td>${escapeHtml(v.license_plate || '—')}</td>
+      <td>${v.active ? '<span class="status-pill status-available">Active</span>' : '<span class="status-pill status-out">Retired</span>'}</td>
+      <td class="actions-cell">
+        <button class="btn btn-ghost btn-sm" data-action="edit-vehicle" data-id="${v.id}">Edit</button>
+        <button class="btn btn-ghost btn-sm" data-action="toggle-vehicle" data-id="${v.id}">${v.active ? 'Retire' : 'Reactivate'}</button>
+      </td>
+    </tr>`).join('');
+  body.innerHTML = `
+    <div class="admin-toolbar"><button class="btn btn-primary btn-sm" id="addVehicleBtn">+ Add vehicle</button></div>
+    <table class="data-table"><thead><tr><th>Name</th><th>Make / model</th><th>Plate</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="5" class="empty-hint">No vehicles yet.</td></tr>'}</tbody></table>
+  `;
+  $('#addVehicleBtn').addEventListener('click', () => openVehicleForm());
+  $all('[data-action=edit-vehicle]', body).forEach(b => b.addEventListener('click', () => openVehicleForm(state.allVehicles.find(v => v.id === b.dataset.id))));
+  $all('[data-action=toggle-vehicle]', body).forEach(b => b.addEventListener('click', async () => {
+    const v = state.allVehicles.find(v => v.id === b.dataset.id);
+    const { error } = await sb.from('vehicles').update({ active: !v.active }).eq('id', v.id);
+    if (error) { showToast(error.message, 'error'); return; }
+    showToast(v.active ? 'Vehicle retired.' : 'Vehicle reactivated.');
+    await fetchVehicles(); renderAdminVehicles();
+  }));
+}
+
+function openVehicleForm(vehicle){
+  const isEdit = !!vehicle;
+  $('#modalRoot').innerHTML = `
+    <div class="modal-overlay" id="vehicleFormModal">
+      <div class="modal-card">
+        <h2 class="modal-title">${isEdit ? 'Edit vehicle' : 'Add vehicle'}</h2>
+        <form id="vehicleForm" style="margin-top:16px;">
+          <label>Name<input type="text" id="vfName" value="${isEdit ? escapeHtml(vehicle.name) : ''}" required placeholder="e.g. Truck 1"></label>
+          <label>Make / model<input type="text" id="vfModel" value="${isEdit ? escapeHtml(vehicle.make_model||'') : ''}" placeholder="e.g. 2021 Ford F-150"></label>
+          <label>License plate<input type="text" id="vfPlate" value="${isEdit ? escapeHtml(vehicle.license_plate||'') : ''}"></label>
+          <p class="form-error" id="vfError" hidden></p>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" id="vfCancel">Cancel</button>
+            <button type="submit" class="btn btn-primary">${isEdit ? 'Save' : 'Add vehicle'}</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  $('#vfCancel').addEventListener('click', closeModal);
+  $('#vehicleFormModal').addEventListener('click', (e) => { if (e.target.id === 'vehicleFormModal') closeModal(); });
+  $('#vehicleForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = $('#vfError');
+    const payload = { name: $('#vfName').value.trim(), make_model: $('#vfModel').value.trim() || null, license_plate: $('#vfPlate').value.trim() || null };
+    const { error } = isEdit
+      ? await sb.from('vehicles').update(payload).eq('id', vehicle.id)
+      : await sb.from('vehicles').insert(payload);
+    if (error) { errEl.textContent = error.message; errEl.hidden = false; return; }
+    closeModal();
+    showToast(isEdit ? 'Vehicle updated.' : 'Vehicle added.');
+    await fetchVehicles(); renderAdminVehicles();
+  });
+}
+
+async function fetchAllProfiles(){
+  const { data, error } = await sb.from('profiles').select('*').order('created_at');
+  if (!error) state.allProfiles = data;
+}
+
+async function renderAdminUsers(){
+  await fetchAllProfiles();
+  const body = $('#adminTabBody');
+  const rows = state.allProfiles.map(p => `
+    <tr>
+      <td>${escapeHtml(p.full_name || '—')}</td>
+      <td>${escapeHtml(p.email)}</td>
+      <td>
+        <select class="role-select" data-id="${p.id}" ${p.id === state.profile.id ? 'disabled' : ''}>
+          <option value="user" ${p.role==='user'?'selected':''}>User</option>
+          <option value="admin" ${p.role==='admin'?'selected':''}>Admin</option>
+        </select>
+      </td>
+    </tr>`).join('');
+  body.innerHTML = `
+    <p class="admin-note">New accounts are created in Supabase (Authentication → Users → Add user) and appear here automatically. This tab manages names and admin access only.</p>
+    <table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead><tbody>${rows}</tbody></table>
+  `;
+  $all('.role-select', body).forEach(sel => sel.addEventListener('change', async () => {
+    const { error } = await sb.from('profiles').update({ role: sel.value }).eq('id', sel.dataset.id);
+    if (error) { showToast(error.message, 'error'); }
+    else showToast('Role updated.');
+    await fetchAllProfiles();
+  }));
+}
+
+async function fetchAllReservationsAdmin(){
+  const { data, error } = await sb.from('reservations')
+    .select('*, vehicle:vehicles(name), user:profiles(full_name,email)')
+    .order('start_at', { ascending:false })
+    .limit(100);
+  if (!error) state.allReservations = data;
+}
+
+async function renderAdminReservations(){
+  await fetchAllReservationsAdmin();
+  const body = $('#adminTabBody');
+  const rows = state.allReservations.map(r => {
+    const who = escapeHtml(r.user?.full_name || r.user?.email || 'Unknown');
+    const vname = escapeHtml(r.vehicle?.name || '(removed)');
+    const statusPill = r.status === 'active' ? '<span class="status-pill status-out">Active</span>'
+      : r.status === 'completed' ? '<span class="status-pill status-available">Completed</span>'
+      : '<span class="status-pill status-reserved">Cancelled</span>';
+    const canAct = r.status === 'active';
+    return `<tr>
+      <td><span class="plate plate-sm">${vname}</span></td>
+      <td>${who}</td>
+      <td>${fmtDateTime(r.start_at)}</td>
+      <td>${fmtDateTime(r.end_at)}</td>
+      <td>${statusPill}</td>
+      <td class="actions-cell">${canAct ? `<button class="btn btn-ghost btn-sm" data-action="force-checkin" data-rid="${r.id}">Check in</button><button class="btn btn-ghost btn-sm" data-action="admin-cancel" data-rid="${r.id}">Cancel</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+  body.innerHTML = `<table class="data-table"><thead><tr><th>Vehicle</th><th>User</th><th>Start</th><th>Return by</th><th>Status</th><th></th></tr></thead>
+  <tbody>${rows || '<tr><td colspan="6" class="empty-hint">No reservations yet.</td></tr>'}</tbody></table>`;
+  $all('[data-action=force-checkin]', body).forEach(b => b.addEventListener('click', () => checkInReservation(b.dataset.rid)));
+  $all('[data-action=admin-cancel]', body).forEach(b => b.addEventListener('click', () => cancelReservation(b.dataset.rid)));
+}
+
+init();
+</script>
+</body>
+</html>
