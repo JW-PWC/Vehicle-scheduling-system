@@ -287,8 +287,13 @@ function setView(view){
 }
 
 // ---------------- realtime + data ----------------
-function subscribeRealtime(){
-  sb.channel('reservations-live')
+let realtimeChannel = null;
+
+function subscribeRealtime() {
+  if (realtimeChannel) {
+    sb.removeChannel(realtimeChannel);   // clean up old one
+  }
+  realtimeChannel = sb.channel('reservations-live')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, () => refreshAll())
     .subscribe();
 }
